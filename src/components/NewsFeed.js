@@ -13,21 +13,27 @@ function NewsFeed() {
   });
   const [selectedArticle, setSelectedArticle] = useState(null);
   
-  const { pageNumber } = useParams();
+  const { pageNumber, tag } = useParams();
   const navigate = useNavigate();
 
-  const fetchPublications = async (page) => {
+  const fetchPublications = async (page, tag=null) => {
     setLoading(true);
     try {
+      // Build query parameters
+      const params = {
+        fields: 'image.url,tags.name,content,title,customDate,createdAt,publishedAt,updatedAt,assetIds',
+        pageSize: pagination.pageSize,
+        pageNumber: page
+      };
+
+      // Add tag filter if we're on a tag route
+      if (tag) {
+        params['filters.tags.attributes.name'] = tag;
+      }
+
       const response = await axios.get(
         'https://api.qa.zfx.com/content-management/v1/publications',
-        {
-          params: {
-            fields: 'image.url,tags.name,content,title,customDate,createdAt,publishedAt,updatedAt',
-            pageSize: pagination.pageSize,
-            pageNumber: page
-          }
-        }
+        { params }
       );
       setPublications(response.data.result || []);
       setPagination(response.data.pagination);
@@ -39,10 +45,10 @@ function NewsFeed() {
   };
 
   useEffect(() => {
-    // No need to convert page number anymore
-    const page = parseInt(pageNumber, 10);
-    fetchPublications(page);
-  }, [pageNumber]);
+    // Use page 1 if pageNumber is not provided in the URL
+    const page = pageNumber ? parseInt(pageNumber, 10) : 1;
+    fetchPublications(page, tag);
+  }, [pageNumber, tag]);
 
   const formatDate = (dateString) => {
     if (!dateString) return '';
@@ -66,7 +72,9 @@ function NewsFeed() {
   const handlePageChange = (newPage) => {
     const totalPages = Math.ceil(pagination.total / pagination.pageSize);
     if (newPage >= 1 && newPage <= totalPages) {
-      navigate(`/page/${newPage}`);
+      // Use the appropriate URL format based on whether we're in tag view
+      const path = tag ? `/tag/${tag}/page/${newPage}` : `/page/${newPage}`;
+      navigate(path);
       window.scrollTo(0, 0);
     }
   };
@@ -247,54 +255,64 @@ function NewsFeed() {
     if (totalPages <= 1) return null;
 
     const pages = [];
-    
-    // Always show first page
-    pages.push(
-      <li key={1} className={`page-item ${currentPage === 1 ? 'active' : ''}`}>
-        <button className="page-link" onClick={() => handlePageChange(1)}>
-          1
-        </button>
-      </li>
-    );
+    const maxVisiblePages = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
 
-    // Calculate range of pages to show around current page
-    let rangeStart = Math.max(2, currentPage - 1);
-    let rangeEnd = Math.min(totalPages - 1, currentPage + 1);
-
-    // Add ellipsis after first page if needed
-    if (rangeStart > 2) {
-      pages.push(
-        <li key="ellipsis-start" className="page-item disabled">
-          <span className="page-link">...</span>
-        </li>
-      );
+    if (endPage - startPage + 1 < maxVisiblePages) {
+      startPage = Math.max(1, endPage - maxVisiblePages + 1);
     }
 
-    // Add pages in the middle
-    for (let i = rangeStart; i <= rangeEnd; i++) {
+    // Add first page
+    if (startPage > 1) {
       pages.push(
-        <li key={i} className={`page-item ${currentPage === i ? 'active' : ''}`}>
-          <button className="page-link" onClick={() => handlePageChange(i)}>
+        <li key={1} className="page-item">
+          <button
+            className="page-link"
+            onClick={() => handlePageChange(1)}
+          >
+            1
+          </button>
+        </li>
+      );
+      if (startPage > 2) {
+        pages.push(
+          <li key="ellipsis1" className="page-item disabled">
+            <span className="page-link">...</span>
+          </li>
+        );
+      }
+    }
+
+    // Add middle pages
+    for (let i = startPage; i <= endPage; i++) {
+      pages.push(
+        <li key={i} className={`page-item ${i === currentPage ? 'active' : ''}`}>
+          <button
+            className="page-link"
+            onClick={() => handlePageChange(i)}
+          >
             {i}
           </button>
         </li>
       );
     }
 
-    // Add ellipsis before last page if needed
-    if (rangeEnd < totalPages - 1) {
+    // Add last page
+    if (endPage < totalPages) {
+      if (endPage < totalPages - 1) {
+        pages.push(
+          <li key="ellipsis2" className="page-item disabled">
+            <span className="page-link">...</span>
+          </li>
+        );
+      }
       pages.push(
-        <li key="ellipsis-end" className="page-item disabled">
-          <span className="page-link">...</span>
-        </li>
-      );
-    }
-
-    // Always show last page
-    if (totalPages > 1) {
-      pages.push(
-        <li key={totalPages} className={`page-item ${currentPage === totalPages ? 'active' : ''}`}>
-          <button className="page-link" onClick={() => handlePageChange(totalPages)}>
+        <li key={totalPages} className="page-item">
+          <button
+            className="page-link"
+            onClick={() => handlePageChange(totalPages)}
+          >
             {totalPages}
           </button>
         </li>
@@ -302,7 +320,7 @@ function NewsFeed() {
     }
 
     return (
-      <nav aria-label="Publication navigation" className="mt-4">
+      <nav aria-label="Page navigation">
         <ul className="pagination justify-content-center">
           <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
             <button
